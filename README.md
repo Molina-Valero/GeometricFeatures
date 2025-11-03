@@ -3,6 +3,15 @@
 ```r
 # Simple test for point cloud geometric features
 # Make sure your C++ file is named "geometric_features.cpp" or adjust accordingly
+#
+# This script uses C++ parallelization for performance.
+#
+# ✅ Requirements:
+#   - R packages: Rcpp
+#   - A working C++ toolchain:
+#       * Windows: RTools (with OpenMP support)
+#       * macOS: install libomp (brew install libomp)
+#       * Linux: g++ / build-essential
 
 library(Rcpp)
 

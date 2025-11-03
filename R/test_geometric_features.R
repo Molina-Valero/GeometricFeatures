@@ -1,5 +1,5 @@
 # Simple test for point cloud geometric features
-# Make sure your C++ file is named "pointcloud.cpp" or adjust accordingly
+# Make sure your C++ file is named "geometric_features.cpp" or adjust accordingly
 
 library(Rcpp)
 

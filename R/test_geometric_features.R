@@ -13,7 +13,7 @@
 library(Rcpp)
 
 # Compile the C++ code
-sourceCpp("../src/geometric_features.cpp")
+sourceCpp("../src/geometric_features_optimized.cpp")
 
 # Create a simple point cloud (a small cube)
 set.seed(123)

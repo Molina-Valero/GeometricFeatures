@@ -1,0 +1,43 @@
+# Simple test for point cloud geometric features
+# Make sure your C++ file is named "pointcloud.cpp" or adjust accordingly
+
+library(Rcpp)
+
+# Compile the C++ code
+sourceCpp("../src/geometric_features.cpp")
+
+# Create a simple point cloud (a small cube)
+set.seed(123)
+n <- 100
+x <- runif(n, 0, 10)
+y <- runif(n, 0, 10)
+z <- runif(n, 0, 10)
+
+# Test 1: Eigenvalue analysis on all points
+cat("Test 1: Eigenvalue Analysis\n")
+point_matrix <- cbind(x, y, z)
+result_pca <- eigenvalue_analysis(point_matrix)
+print(result_pca)
+
+# Test 2: Geometric features for a few points
+cat("\nTest 2: Geometric Features\n")
+# Select 5 points to analyze
+test_points <- cbind(
+  point = 1:5,
+  x = x[1:5],
+  y = y[1:5],
+  z = z[1:5]
+)
+
+# Calculate features within radius of 2 units
+features <- geometric_features_batch(
+  points = test_points,
+  x_all = x,
+  y_all = y,
+  z_all = z,
+  dist = 2.0
+)
+
+print(features)
+
+cat("\nTest completed successfully!\n")

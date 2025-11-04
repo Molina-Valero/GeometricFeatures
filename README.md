@@ -23,7 +23,6 @@ tree <- read.table("../data/tree.txt", header = TRUE)
 plot <- read.table("../data/plot.txt", header = TRUE)
 
 
-
 # Test: Geometric features
 cat("\nTest 2: Geometric Features\n")
 
@@ -38,8 +37,7 @@ time_taken <- system.time({
 })
 print(time_taken)
 
-write.table(features, "../data/treeFeatures.txt", row.names = FALSE)
-
+# write.table(features, "../data/treeFeatures.txt", row.names = FALSE)
 
 time_taken <- system.time({
   features <- geometric_features_batch(
@@ -55,5 +53,5 @@ print(features)
 
 cat("\nTest completed successfully!\n")
 
-write.table(features, "../data/plotFeatures.txt", row.names = FALSE)
+# write.table(features, "../data/plotFeatures.txt", row.names = FALSE)
 ```

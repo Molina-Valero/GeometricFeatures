@@ -129,27 +129,27 @@ std::map<std::string, double> geometric_features_core(const Eigen::Map<Eigen::Ve
                                                       double z_pto,
                                                       double point_pto,
                                                       double dist,
-                                                      bool First_eigenvalue = true,
-                                                      bool Second_eigenvalue = true,
-                                                      bool Third_eigenvalue = true,
+                                                      bool Anisotropy = true,
+                                                      bool Eigenentropy = true,
                                                       bool Eigenvalue_sum = true,
+                                                      bool First_eigenvalue = true,
+                                                      bool Linearity = true,
+                                                      bool Normal_change_rate = false,
                                                       bool Normal_x = true,
                                                       bool Normal_y = true,
                                                       bool Normal_z = true,
+                                                      bool Number_of_points = false,
+                                                      bool Omnivariance = true,
                                                       bool PCA_1 = true,
                                                       bool PCA_2 = true,
-                                                      bool Anisotropy = true,
-                                                      bool Eigenentropy = true,
-                                                      bool Linearity = true,
-                                                      bool Omnivariance = true,
                                                       bool Planarity = true,
+                                                      bool Second_eigenvalue = true,
                                                       bool Sphericity = true,
+                                                      bool Surface_density = false,
                                                       bool Surface_variation = true,
-                                                      bool Normal_change_rate = false,
+                                                      bool Third_eigenvalue = true,
                                                       bool Verticality = true,
-                                                      bool Number_of_points = false,
-                                                      bool surface_density = false,
-                                                      bool volume_density = false,
+                                                      bool Volume_density = false,
                                                       int solver_thresh = 50000) {
   const int SIZE = x.size();
   
@@ -168,79 +168,73 @@ std::map<std::string, double> geometric_features_core(const Eigen::Map<Eigen::Ve
     }
   }
   
-  // Assign features to a map
   std::map<std::string, double> features;
+  features["point"] = point_pto;
   
-  // Return NA for all features if there are fewer than 3 points
+  // Not enough neighbors
   if (count < 3) {
-    
-    features["point"] = point_pto;
-    if (First_eigenvalue) features["First_eigenvalue"] = NA_REAL;
-    if (Second_eigenvalue) features["Second_eigenvalue"] = NA_REAL;
-    if (Third_eigenvalue) features["Third_eigenvalue"] = NA_REAL;
+    if (Anisotropy) features["Anisotropy"] = NA_REAL;
+    if (Eigenentropy) features["Eigenentropy"] = NA_REAL;
     if (Eigenvalue_sum) features["Eigenvalue_sum"] = NA_REAL;
+    if (First_eigenvalue) features["First_eigenvalue"] = NA_REAL;
+    if (Linearity) features["Linearity"] = NA_REAL;
+    if (Normal_change_rate) features["Normal_change_rate"] = NA_REAL;
     if (Normal_x) features["Normal_x"] = NA_REAL;
     if (Normal_y) features["Normal_y"] = NA_REAL;
     if (Normal_z) features["Normal_z"] = NA_REAL;
+    if (Number_of_points) features["Number_of_points"] = NA_REAL;
+    if (Omnivariance) features["Omnivariance"] = NA_REAL;
     if (PCA_1) features["PCA_1"] = NA_REAL;
     if (PCA_2) features["PCA_2"] = NA_REAL;
-    if (Anisotropy) features["Anisotropy"] = NA_REAL;
-    if (Eigenentropy) features["Eigenentropy"] = NA_REAL;
-    if (Linearity) features["Linearity"] = NA_REAL;
-    if (Omnivariance) features["Omnivariance"] = NA_REAL;
     if (Planarity) features["Planarity"] = NA_REAL;
+    if (Second_eigenvalue) features["Second_eigenvalue"] = NA_REAL;
     if (Sphericity) features["Sphericity"] = NA_REAL;
+    if (Surface_density) features["Surface_density"] = NA_REAL;
     if (Surface_variation) features["Surface_variation"] = NA_REAL;
-    if (Normal_change_rate) features["Normal_change_rate"] = NA_REAL;
+    if (Third_eigenvalue) features["Third_eigenvalue"] = NA_REAL;
     if (Verticality) features["Verticality"] = NA_REAL;
-    if (Number_of_points) features["Number_of_points"] = NA_REAL;
-    if (surface_density) features["surface_density"] = NA_REAL;
-    if (volume_density) features["volume_density"] = NA_REAL;
-    
+    if (Volume_density) features["Volume_density"] = NA_REAL;
     return features;
   }
   
-  // Allocate matrix (m) based on the number of points within range
-  Eigen::MatrixXd m(count, 3);
-  
-  // Fill the matrix (m) with the coordinates of points within the range
-  for (int idx = 0; idx < count; ++idx) {
-    int i = indices_in_range[idx];
-    m(idx, 0) = x[i];
-    m(idx, 1) = y[i];
-    m(idx, 2) = z[i];
+  // Build local point cloud
+  Eigen::MatrixXd local_cloud(count, 3);
+  for (int i = 0; i < count; ++i) {
+    int idx = indices_in_range[i];
+    local_cloud(i, 0) = x[idx];
+    local_cloud(i, 1) = y[idx];
+    local_cloud(i, 2) = z[idx];
   }
   
-  // call your robust PCA core (returns descending eigenvalues in val)
-  auto pca = eigenvalue_analysis_core<double>(m);
+  // PCA
+  auto pca = eigenvalue_analysis_core<double>(local_cloud);
   
   double lambda1 = pca.val(0);
   double lambda2 = pca.val(1);
   double lambda3 = pca.val(2);
   
-  features["point"] = point_pto;
-  if (First_eigenvalue) features["First_eigenvalue"] = lambda1;
-  if (Second_eigenvalue) features["Second_eigenvalue"] = lambda2;
-  if (Third_eigenvalue) features["Third_eigenvalue"] = lambda3;
+  // Compute features
+  if (Anisotropy) features["Anisotropy"] = (Anisotropy) ? (lambda1 - lambda3) / lambda1 : NA_REAL;
+  if (Eigenentropy) features["Eigenentropy"] = (Eigenentropy) ? -(lambda1 * log(lambda1) + lambda2 * log(lambda2) + lambda3 * log(lambda3)) : NA_REAL;
   if (Eigenvalue_sum) features["Eigenvalue_sum"] = pca.val.sum();
-  
+  if (First_eigenvalue) features["First_eigenvalue"] = lambda1;
+  if (Linearity) features["Linearity"] = (Linearity) ? (lambda1 - lambda2) / lambda1 : NA_REAL;
   if (Normal_x) features["Normal_x"] = pca.v2(0);
   if (Normal_y) features["Normal_y"] = pca.v2(1);
   if (Normal_z) features["Normal_z"] = pca.v2(2);
-  
+  if (Number_of_points) features["Number_of_points"] = (Number_of_points) ? static_cast<double>(count) : NA_REAL;
+  if (Omnivariance) features["Omnivariance"] = (Omnivariance) ? pow(lambda1 * lambda2 * lambda3, 1.0 / 3.0) : NA_REAL;
   if (PCA_1) features["PCA_1"] = (PCA_1) ? lambda1 / pca.val.sum() : NA_REAL;
   if (PCA_2) features["PCA_2"] = (PCA_2) ? lambda2 / pca.val.sum() : NA_REAL;
-  
-  if (Anisotropy) features["Anisotropy"] = (Anisotropy) ? (lambda1 - lambda3) / lambda1 : NA_REAL;
-  if (Eigenentropy) features["Eigenentropy"] = (Eigenentropy) ? -(lambda1 * log(lambda1) + lambda2 * log(lambda2) + lambda3 * log(lambda3)) : NA_REAL;
-  if (Linearity) features["Linearity"] = (Linearity) ? (lambda1 - lambda2) / lambda1 : NA_REAL;
-  if (Omnivariance) features["Omnivariance"] = (Omnivariance) ? pow(lambda1 * lambda2 * lambda3, 1.0 / 3.0) : NA_REAL;
   if (Planarity) features["Planarity"] = (Planarity) ? (lambda2 - lambda3) / lambda1 : NA_REAL;
+  if (Second_eigenvalue) features["Second_eigenvalue"] = lambda2;
   if (Sphericity) features["Sphericity"] = (Sphericity) ? lambda3 / lambda1 : NA_REAL;
-  if (surface_density) features["surface_density"] = (surface_density) ? static_cast<double>(count) / (4.0 * M_PI * std::pow(dist, 2.0))  : NA_REAL;
+  if (Surface_density) features["Surface_density"] = (Surface_density) ? static_cast<double>(count) / (4.0 * M_PI * std::pow(dist, 2.0)) : NA_REAL;
   if (Surface_variation) features["Surface_variation"] = (Surface_variation) ? lambda3 / pca.val.sum() : NA_REAL;
+  if (Third_eigenvalue) features["Third_eigenvalue"] = lambda3;
   if (Verticality) features["Verticality"] = (Verticality) ? 1.0 - abs(pca.v2(2)) : NA_REAL;
-  
+  if (Volume_density) features["Volume_density"] = (Volume_density) ? static_cast<double>(count) / ((4.0/3.0) * M_PI * std::pow(dist, 3.0)) : NA_REAL;
+
   return features;
   
 }
@@ -252,27 +246,27 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
                                          Rcpp::NumericVector y_all,
                                          Rcpp::NumericVector z_all,
                                          double dist,
-                                         bool First_eigenvalue = true,
-                                         bool Second_eigenvalue = true,
-                                         bool Third_eigenvalue = true,
+                                         bool Anisotropy = true,
+                                         bool Eigenentropy = true,
                                          bool Eigenvalue_sum = true,
+                                         bool First_eigenvalue = true,
+                                         bool Linearity = true,
+                                         bool Normal_change_rate = false,
                                          bool Normal_x = true,
                                          bool Normal_y = true,
                                          bool Normal_z = true,
+                                         bool Number_of_points = false,
+                                         bool Omnivariance = true,
                                          bool PCA_1 = true,
                                          bool PCA_2 = true,
-                                         bool Anisotropy = true,
-                                         bool Eigenentropy = true,
-                                         bool Linearity = true,
-                                         bool Omnivariance = true,
                                          bool Planarity = true,
+                                         bool Second_eigenvalue = true,
                                          bool Sphericity = true,
+                                         bool Surface_density = false,
                                          bool Surface_variation = true,
-                                         bool Normal_change_rate = false,
+                                         bool Third_eigenvalue = true,
                                          bool Verticality = true,
-                                         bool Number_of_points = false,
-                                         bool surface_density = false,
-                                         bool volume_density = false,
+                                         bool Volume_density = false,
                                          int solver_thresh = 50000,
                                          int num_threads = 0) {
   
@@ -323,12 +317,13 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
     auto features = geometric_features_core(x_map, y_map, z_map,
                                             x_pto, y_pto, z_pto,
                                             point_id, dist,
-                                            First_eigenvalue, Second_eigenvalue, Third_eigenvalue,
-                                            Eigenvalue_sum, Normal_x, Normal_y, Normal_z,
-                                            PCA_1, PCA_2, Anisotropy, Eigenentropy,
-                                            Linearity, Omnivariance, Planarity, Sphericity,
-                                            Surface_variation, Normal_change_rate, Verticality,
-                                            Number_of_points, surface_density, volume_density,
+                                            Anisotropy, Eigenentropy, Eigenvalue_sum,
+                                            First_eigenvalue, Linearity, Normal_change_rate,
+                                            Normal_x, Normal_y, Normal_z,
+                                            Number_of_points, Omnivariance, PCA_1, PCA_2,
+                                            Planarity, Second_eigenvalue, Sphericity,
+                                            Surface_density, Surface_variation, Third_eigenvalue,
+                                            Verticality, Volume_density,
                                             solver_thresh);
     
     // Store results directly into pre-allocated vectors
@@ -337,27 +332,27 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
     vec_y[i] = y_pto;
     vec_z[i] = z_pto;
     
-    if (First_eigenvalue) vec_first_ev[i] = features["First_eigenvalue"];
-    if (Second_eigenvalue) vec_second_ev[i] = features["Second_eigenvalue"];
-    if (Third_eigenvalue) vec_third_ev[i] = features["Third_eigenvalue"];
+    if (Anisotropy) vec_anisotropy[i] = features["Anisotropy"];
+    if (Eigenentropy) vec_eigenentropy[i] = features["Eigenentropy"];
     if (Eigenvalue_sum) vec_ev_sum[i] = features["Eigenvalue_sum"];
+    if (First_eigenvalue) vec_first_ev[i] = features["First_eigenvalue"];
+    if (Linearity) vec_linearity[i] = features["Linearity"];
+    if (Normal_change_rate) vec_normal_change[i] = features["Normal_change_rate"];
     if (Normal_x) vec_normal_x[i] = features["Normal_x"];
     if (Normal_y) vec_normal_y[i] = features["Normal_y"];
     if (Normal_z) vec_normal_z[i] = features["Normal_z"];
+    if (Number_of_points) vec_n_points[i] = features["Number_of_points"];
+    if (Omnivariance) vec_omnivariance[i] = features["Omnivariance"];
     if (PCA_1) vec_pca1[i] = features["PCA_1"];
     if (PCA_2) vec_pca2[i] = features["PCA_2"];
-    if (Anisotropy) vec_anisotropy[i] = features["Anisotropy"];
-    if (Eigenentropy) vec_eigenentropy[i] = features["Eigenentropy"];
-    if (Linearity) vec_linearity[i] = features["Linearity"];
-    if (Omnivariance) vec_omnivariance[i] = features["Omnivariance"];
     if (Planarity) vec_planarity[i] = features["Planarity"];
+    if (Second_eigenvalue) vec_second_ev[i] = features["Second_eigenvalue"];
     if (Sphericity) vec_sphericity[i] = features["Sphericity"];
+    if (Surface_density) vec_surf_density[i] = features["Surface_density"];
     if (Surface_variation) vec_surface_var[i] = features["Surface_variation"];
-    if (Normal_change_rate) vec_normal_change[i] = features["Normal_change_rate"];
+    if (Third_eigenvalue) vec_third_ev[i] = features["Third_eigenvalue"];
     if (Verticality) vec_verticality[i] = features["Verticality"];
-    if (Number_of_points) vec_n_points[i] = features["Number_of_points"];
-    if (surface_density) vec_surf_density[i] = features["surface_density"];
-    if (volume_density) vec_vol_density[i] = features["volume_density"];
+    if (Volume_density) vec_vol_density[i] = features["Volume_density"];
   }
   
   // Build the DataFrame
@@ -366,27 +361,27 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
   result["x"] = vec_x;
   result["y"] = vec_y;
   result["z"] = vec_z;
-  if (First_eigenvalue) result["First_eigenvalue"] = vec_first_ev;
-  if (Second_eigenvalue) result["Second_eigenvalue"] = vec_second_ev;
-  if (Third_eigenvalue) result["Third_eigenvalue"] = vec_third_ev;
+  if (Anisotropy) result["Anisotropy"] = vec_anisotropy;
+  if (Eigenentropy) result["Eigenentropy"] = vec_eigenentropy;
   if (Eigenvalue_sum) result["Eigenvalue_sum"] = vec_ev_sum;
+  if (First_eigenvalue) result["First_eigenvalue"] = vec_first_ev;
+  if (Linearity) result["Linearity"] = vec_linearity;
+  if (Normal_change_rate) result["Normal_change_rate"] = vec_normal_change;
   if (Normal_x) result["Normal_x"] = vec_normal_x;
   if (Normal_y) result["Normal_y"] = vec_normal_y;
   if (Normal_z) result["Normal_z"] = vec_normal_z;
+  if (Number_of_points) result["Number_of_points"] = vec_n_points;
+  if (Omnivariance) result["Omnivariance"] = vec_omnivariance;
   if (PCA_1) result["PCA_1"] = vec_pca1;
   if (PCA_2) result["PCA_2"] = vec_pca2;
-  if (Anisotropy) result["Anisotropy"] = vec_anisotropy;
-  if (Eigenentropy) result["Eigenentropy"] = vec_eigenentropy;
-  if (Linearity) result["Linearity"] = vec_linearity;
-  if (Omnivariance) result["Omnivariance"] = vec_omnivariance;
   if (Planarity) result["Planarity"] = vec_planarity;
+  if (Second_eigenvalue) result["Second_eigenvalue"] = vec_second_ev;
   if (Sphericity) result["Sphericity"] = vec_sphericity;
+  if (Surface_density) result["Surface_density"] = vec_surf_density;
   if (Surface_variation) result["Surface_variation"] = vec_surface_var;
-  if (Normal_change_rate) result["Normal_change_rate"] = vec_normal_change;
+  if (Third_eigenvalue) result["Third_eigenvalue"] = vec_third_ev;
   if (Verticality) result["Verticality"] = vec_verticality;
-  if (Number_of_points) result["Number_of_points"] = vec_n_points;
-  if (surface_density) result["surface_density"] = vec_surf_density;
-  if (volume_density) result["volume_density"] = vec_vol_density;
+  if (Volume_density) result["Volume_density"] = vec_vol_density;
   
   return Rcpp::DataFrame(result);
 }

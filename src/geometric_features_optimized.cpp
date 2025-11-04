@@ -19,7 +19,7 @@ template <typename T>
 using Vec3 = Eigen::Matrix<T, 3, 1>;
 
 template <typename T>
-using PointCloud = Eigen::Matrix<T, Eigen::Dynamic, 3, Eigen::RowMajor>; // Nx3 point cloud
+using PointCloud = Eigen::Matrix<T, Eigen::Dynamic, 3, Eigen::RowMajor>; // Nx3 point cloud, RowMajor for cache locality
 
 template <typename real_t>
 struct PCAResult {
@@ -29,7 +29,7 @@ struct PCAResult {
   Vec3<real_t> v2;   // eigenvector for smallest EV (z-oriented positive)
 };
 
-// Structure to hold computed features
+// Structure to hold computed features (avoids std::map overhead)
 struct GeometricFeatures {
   double point_id;
   double lambda1, lambda2, lambda3;
@@ -38,7 +38,7 @@ struct GeometricFeatures {
   double pca1, pca2;
   double anisotropy, eigenentropy, linearity;
   double omnivariance, planarity, sphericity;
-  double surface_variation, verticality;
+  double surface_variation, normal_change_rate, verticality;
   double n_points, surface_density, volume_density;
   int count;
   
@@ -48,8 +48,8 @@ struct GeometricFeatures {
     eigenvalue_sum(NA_REAL), normal_x(NA_REAL), normal_y(NA_REAL), normal_z(NA_REAL),
     pca1(NA_REAL), pca2(NA_REAL), anisotropy(NA_REAL), eigenentropy(NA_REAL),
     linearity(NA_REAL), omnivariance(NA_REAL), planarity(NA_REAL), sphericity(NA_REAL),
-    surface_variation(NA_REAL), verticality(NA_REAL), n_points(NA_REAL),
-    surface_density(NA_REAL), volume_density(NA_REAL), count(0) {}
+    surface_variation(NA_REAL), normal_change_rate(NA_REAL), verticality(NA_REAL), 
+    n_points(NA_REAL), surface_density(NA_REAL), volume_density(NA_REAL), count(0) {}
 };
 
 // ----- AUXILIARY FUNCTIONS -----
@@ -81,7 +81,7 @@ eigenvalue_analysis_core(const PointCloud<real_t>& cloud)
   // Compute centroid
   const Vec3<real_t> centroid = cloud.colwise().mean();
   
-  // Compute covariance matrix directly without creating centered matrix
+  // Compute covariance matrix directly without creating centered matrix (saves memory)
   Eigen::Matrix<real_t, 3, 3> cov = Eigen::Matrix<real_t, 3, 3>::Zero();
   
   for (Eigen::Index i = 0; i < N; ++i) {
@@ -98,7 +98,7 @@ eigenvalue_analysis_core(const PointCloud<real_t>& cloud)
   const auto ev = es.eigenvalues();   // ascending
   const auto evecs = es.eigenvectors();  // columns = eigenvectors
   
-  // Sort indices by descending eigenvalue
+  // Sort indices by descending eigenvalue (optimized sorting network for 3 elements)
   std::array<int, 3> idx{2, 1, 0}; // Start with descending order
   if (ev(1) > ev(2)) std::swap(idx[0], idx[1]);
   if (ev(0) > ev(1)) std::swap(idx[1], idx[2]);
@@ -156,13 +156,14 @@ GeometricFeatures geometric_features_core(const Eigen::Map<const Eigen::VectorXd
                                           const Eigen::Map<const Eigen::VectorXd>& z,
                                           double x_pto, double y_pto, double z_pto,
                                           double point_id, double dist,
-                                          bool compute_density_features) {
+                                          bool compute_density_features,
+                                          bool compute_normal_change) {
   
   GeometricFeatures features;
   features.point_id = point_id;
   
   const Eigen::Index SIZE = x.size();
-  const double dist_sq = dist * dist;  // Use squared distance for comparison
+  const double dist_sq = dist * dist;  // Use squared distance for comparison (avoids sqrt)
   
   // First pass: count and collect indices
   std::vector<Eigen::Index> indices_in_range;
@@ -201,16 +202,18 @@ GeometricFeatures geometric_features_core(const Eigen::Map<const Eigen::VectorXd
   const double lambda3 = pca.val(2);
   const double lambda_sum = pca.val.sum();
   
-  // Store eigenvalues and normals
+  // Store eigenvalues
   features.lambda1 = lambda1;
   features.lambda2 = lambda2;
   features.lambda3 = lambda3;
   features.eigenvalue_sum = lambda_sum;
+  
+  // Store normal vector
   features.normal_x = pca.v2(0);
   features.normal_y = pca.v2(1);
   features.normal_z = pca.v2(2);
   
-  // Compute features with safety checks
+  // Compute features with safety checks (avoid division by zero)
   constexpr double epsilon = 1e-10;
   
   if (lambda_sum > epsilon) {
@@ -226,7 +229,7 @@ GeometricFeatures geometric_features_core(const Eigen::Map<const Eigen::VectorXd
     features.sphericity = lambda3 / lambda1;
   }
   
-  // Eigenentropy - check all eigenvalues are positive
+  // Eigenentropy - check all eigenvalues are positive and normalize properly
   if (lambda1 > epsilon && lambda2 > epsilon && lambda3 > epsilon) {
     const double norm_l1 = lambda1 / lambda_sum;
     const double norm_l2 = lambda2 / lambda_sum;
@@ -236,13 +239,19 @@ GeometricFeatures geometric_features_core(const Eigen::Map<const Eigen::VectorXd
                               norm_l3 * std::log(norm_l3));
   }
   
-  // Omnivariance - geometric mean of eigenvalues
+  // Omnivariance - geometric mean of eigenvalues (use cbrt for better precision)
   if (lambda1 > epsilon && lambda2 > epsilon && lambda3 > epsilon) {
     features.omnivariance = std::cbrt(lambda1 * lambda2 * lambda3);
   }
   
   // Verticality
   features.verticality = 1.0 - std::abs(pca.v2(2));
+  
+  // Normal change rate (optional, computationally expensive)
+  if (compute_normal_change) {
+    // Placeholder - would need additional computation
+    features.normal_change_rate = NA_REAL;
+  }
   
   // Density features (only compute if requested)
   if (compute_density_features && dist > epsilon) {
@@ -260,27 +269,27 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
                                          Rcpp::NumericVector y_all,
                                          Rcpp::NumericVector z_all,
                                          double dist,
-                                         bool First_eigenvalue = true,
-                                         bool Second_eigenvalue = true,
-                                         bool Third_eigenvalue = true,
+                                         bool Anisotropy = true,
+                                         bool Eigenentropy = true,
                                          bool Eigenvalue_sum = true,
+                                         bool First_eigenvalue = true,
+                                         bool Linearity = true,
+                                         bool Normal_change_rate = false,
                                          bool Normal_x = true,
                                          bool Normal_y = true,
                                          bool Normal_z = true,
+                                         bool Number_of_points = false,
+                                         bool Omnivariance = true,
                                          bool PCA_1 = true,
                                          bool PCA_2 = true,
-                                         bool Anisotropy = true,
-                                         bool Eigenentropy = true,
-                                         bool Linearity = true,
-                                         bool Omnivariance = true,
                                          bool Planarity = true,
+                                         bool Second_eigenvalue = true,
                                          bool Sphericity = true,
+                                         bool Surface_density = false,
                                          bool Surface_variation = true,
-                                         bool Normal_change_rate = false,
+                                         bool Third_eigenvalue = true,
                                          bool Verticality = true,
-                                         bool Number_of_points = false,
-                                         bool surface_density = false,
-                                         bool volume_density = false,
+                                         bool Volume_density = false,
                                          int solver_thresh = 50000,
                                          int num_threads = 0) {
   
@@ -307,10 +316,11 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
   const Eigen::Map<const Eigen::VectorXd> y_map(y_all.begin(), y_all.size());
   const Eigen::Map<const Eigen::VectorXd> z_map(z_all.begin(), z_all.size());
   
-  // Check if density features are needed
-  const bool compute_density = surface_density || volume_density;
+  // Check if density features are needed (to avoid unnecessary computation)
+  const bool compute_density = Surface_density || Volume_density;
+  const bool compute_normal_change = Normal_change_rate;
   
-  // Pre-allocate result vectors
+  // Pre-allocate result vectors (initialize with NA_REAL for optional features)
   std::vector<double> vec_point(n_points), vec_x(n_points), vec_y(n_points), vec_z(n_points);
   std::vector<double> vec_first_ev(n_points, NA_REAL), vec_second_ev(n_points, NA_REAL);
   std::vector<double> vec_third_ev(n_points, NA_REAL), vec_ev_sum(n_points, NA_REAL);
@@ -320,11 +330,12 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
   std::vector<double> vec_anisotropy(n_points, NA_REAL), vec_eigenentropy(n_points, NA_REAL);
   std::vector<double> vec_linearity(n_points, NA_REAL), vec_omnivariance(n_points, NA_REAL);
   std::vector<double> vec_planarity(n_points, NA_REAL), vec_sphericity(n_points, NA_REAL);
-  std::vector<double> vec_surface_var(n_points, NA_REAL), vec_verticality(n_points, NA_REAL);
+  std::vector<double> vec_surface_var(n_points, NA_REAL), vec_normal_change(n_points, NA_REAL);
+  std::vector<double> vec_verticality(n_points, NA_REAL);
   std::vector<double> vec_n_points(n_points, NA_REAL);
   std::vector<double> vec_surf_density(n_points, NA_REAL), vec_vol_density(n_points, NA_REAL);
   
-  // Parallel loop over each point
+  // Parallel loop over each point (with dynamic scheduling and chunk size optimization)
 #pragma omp parallel for schedule(dynamic, 64) if(n_points > 100)
   for (int i = 0; i < n_points; ++i) {
     
@@ -346,7 +357,8 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
     const auto features = geometric_features_core(x_map, y_map, z_map,
                                                    x_pto, y_pto, z_pto,
                                                    point_id, dist,
-                                                   compute_density);
+                                                   compute_density,
+                                                   compute_normal_change);
     
     // Store basic info
     vec_point[i] = features.point_id;
@@ -354,7 +366,7 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
     vec_y[i] = y_pto;
     vec_z[i] = z_pto;
     
-    // Store computed features
+    // Store computed features (only if requested)
     if (First_eigenvalue) vec_first_ev[i] = features.lambda1;
     if (Second_eigenvalue) vec_second_ev[i] = features.lambda2;
     if (Third_eigenvalue) vec_third_ev[i] = features.lambda3;
@@ -371,10 +383,11 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
     if (Planarity) vec_planarity[i] = features.planarity;
     if (Sphericity) vec_sphericity[i] = features.sphericity;
     if (Surface_variation) vec_surface_var[i] = features.surface_variation;
+    if (Normal_change_rate) vec_normal_change[i] = features.normal_change_rate;
     if (Verticality) vec_verticality[i] = features.verticality;
     if (Number_of_points) vec_n_points[i] = features.n_points;
-    if (surface_density) vec_surf_density[i] = features.surface_density;
-    if (volume_density) vec_vol_density[i] = features.volume_density;
+    if (Surface_density) vec_surf_density[i] = features.surface_density;
+    if (Volume_density) vec_vol_density[i] = features.volume_density;
   }
   
   // Build the DataFrame efficiently
@@ -384,26 +397,27 @@ Rcpp::DataFrame geometric_features_batch(Rcpp::NumericMatrix points,
   result["y"] = vec_y;
   result["z"] = vec_z;
   
-  if (First_eigenvalue) result["First_eigenvalue"] = vec_first_ev;
-  if (Second_eigenvalue) result["Second_eigenvalue"] = vec_second_ev;
-  if (Third_eigenvalue) result["Third_eigenvalue"] = vec_third_ev;
+  if (Anisotropy) result["Anisotropy"] = vec_anisotropy;
+  if (Eigenentropy) result["Eigenentropy"] = vec_eigenentropy;
   if (Eigenvalue_sum) result["Eigenvalue_sum"] = vec_ev_sum;
+  if (First_eigenvalue) result["First_eigenvalue"] = vec_first_ev;
+  if (Linearity) result["Linearity"] = vec_linearity;
+  if (Normal_change_rate) result["Normal_change_rate"] = vec_normal_change;
   if (Normal_x) result["Normal_x"] = vec_normal_x;
   if (Normal_y) result["Normal_y"] = vec_normal_y;
   if (Normal_z) result["Normal_z"] = vec_normal_z;
+  if (Number_of_points) result["Number_of_points"] = vec_n_points;
+  if (Omnivariance) result["Omnivariance"] = vec_omnivariance;
   if (PCA_1) result["PCA_1"] = vec_pca1;
   if (PCA_2) result["PCA_2"] = vec_pca2;
-  if (Anisotropy) result["Anisotropy"] = vec_anisotropy;
-  if (Eigenentropy) result["Eigenentropy"] = vec_eigenentropy;
-  if (Linearity) result["Linearity"] = vec_linearity;
-  if (Omnivariance) result["Omnivariance"] = vec_omnivariance;
   if (Planarity) result["Planarity"] = vec_planarity;
+  if (Second_eigenvalue) result["Second_eigenvalue"] = vec_second_ev;
   if (Sphericity) result["Sphericity"] = vec_sphericity;
+  if (Surface_density) result["Surface_density"] = vec_surf_density;
   if (Surface_variation) result["Surface_variation"] = vec_surface_var;
+  if (Third_eigenvalue) result["Third_eigenvalue"] = vec_third_ev;
   if (Verticality) result["Verticality"] = vec_verticality;
-  if (Number_of_points) result["Number_of_points"] = vec_n_points;
-  if (surface_density) result["surface_density"] = vec_surf_density;
-  if (volume_density) result["volume_density"] = vec_vol_density;
+  if (Volume_density) result["Volume_density"] = vec_vol_density;
   
   return Rcpp::DataFrame(result);
 }

@@ -38,7 +38,7 @@ cat("\nTest 2: Geometric Features\n")
 # Calculate features within radius of 2 units
 time_taken <- system.time({
   features <- geometric_features_batch(
-    points = tree,
+    points = as.matrix(tree),
     x_all = tree$x,
     y_all = tree$y,
     z_all = tree$z,
@@ -64,4 +64,4 @@ print(features)
 
 cat("\nTest completed successfully!\n")
 
-# write.table(features, "treeFeatures.txt", row.names = FALSE)
+write.table(features, "../data/treeFeatures.txt", row.names = FALSE)

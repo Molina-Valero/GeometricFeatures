@@ -20,7 +20,10 @@ sourceCpp("../src/geometric_features_optimized_ultra.cpp")
 
 # Load dataset
 tree <- read.table("../data/tree.txt", header = TRUE)
+
+# The plot file is here: https://drive.google.com/file/d/1GszdG8J9cRZsTtRkd80HQ_a7u10uxhKd/view?usp=sharing
 plot <- read.table("../data/plot.txt", header = TRUE)
+
 
 
 # Test: Geometric features
@@ -38,6 +41,7 @@ time_taken <- system.time({
 print(time_taken)
 
 # write.table(features, "../data/treeFeatures.txt", row.names = FALSE)
+
 
 time_taken <- system.time({
   features <- geometric_features_batch(

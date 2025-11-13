@@ -13,11 +13,13 @@
 #       * macOS: install libomp (brew install libomp)
 #       * Linux: g++ / build-essential
 
+
+
 library(Rcpp)
 
 # Compile the C++ code
-sourceCpp("../src/geometric_features_optimized_ultra_dist.cpp")
-sourceCpp("../src/geometric_features_optimized_ultra_knn.cpp")
+sourceCpp("../src/geometric_features_dist.cpp")
+sourceCpp("../src/geometric_features_knn.cpp")
 
 # Load dataset
 tree <- read.table("../data/tree.txt", header = TRUE)
@@ -84,7 +86,6 @@ legend(x = "topleft",
        legend = c("Dist", "Knn", "CloudCompare"),
        lwd = 3, col = c(2, 3, 4), lty = c(1, 2, 3), bty = "n")
 
-
 # Planarity
 
 plot(density(features_dist$Planarity, na.rm = TRUE), col = 2, lwd = 3)
@@ -92,6 +93,7 @@ plot(density(features_dist$Planarity, na.rm = TRUE), col = 2, lwd = 3)
 lines(density(features_knn$Planarity), col = 3, lwd=3, lty = 2)
 
 lines(density(treeFeatures_CC$Planarity_.0.155122., na.rm = TRUE), col = 4, lwd=3, lty = 3)
+
 
 legend(x = "topleft",
        legend = c("Dist", "Knn", "CloudCompare"),
@@ -105,6 +107,7 @@ plot(density(features_dist$Surface_variation, na.rm = TRUE), col = 2, lwd = 3)
 lines(density(features_knn$Surface_variation), col = 3, lwd=3, lty = 2)
 
 lines(density(treeFeatures_CC$Surface_variation_.0.155122., na.rm = TRUE), col = 4, lwd=3, lty = 3)
+
 
 legend(x = "topleft",
        legend = c("Dist", "Knn", "CloudCompare"),

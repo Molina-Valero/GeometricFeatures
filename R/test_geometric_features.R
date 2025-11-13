@@ -13,8 +13,8 @@
 library(Rcpp)
 
 # Compile the C++ code
-sourceCpp("../src/geometric_features_optimized_ultra_dist.cpp")
-sourceCpp("../src/geometric_features_optimized_ultra_knn.cpp")
+sourceCpp("../src/geometric_features_dist.cpp")
+sourceCpp("../src/geometric_features_knn.cpp")
 
 # Load dataset
 tree <- read.table("../data/tree.txt", header = TRUE)
